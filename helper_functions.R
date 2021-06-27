@@ -56,12 +56,11 @@ sendMatchEmails <- function(pairs, signup_list = signup.list) {
     # send email
     email %>%
       smtp_send(
-        to = "lauren.renaud+test@gmail.com",
-        # to = c(signup.list$email[signup.list$name==partner1],
-        #        signup.list$email[signup.list$name==partner2]),
+        # to = "lauren.renaud+test@gmail.com",
+        to = c(signup_list$email[signup_list$name==partner1],
+               signup_list$email[signup_list$name==partner2]),
         from = c("Lauren at SURJ" = "lauren.renaud@gmail.com"),
         subject = "Match for SURJ July of 1:1s",
-        # credentials = creds_file("gmail_creds")
         credentials = creds_envvar(
           user = "lauren.renaud@gmail.com",
           pass_envvar = "SMTP_PASSWORD",

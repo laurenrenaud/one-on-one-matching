@@ -10,7 +10,7 @@ library(httr)
 library(jsonlite)
 source("helper_functions.R")
 
-test_run <- TRUE
+test_run <- FALSE
 
 if (test_run) {
   source("setup.R")
