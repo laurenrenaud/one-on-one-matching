@@ -1,0 +1,51 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="style.css"/>
+    {{ headContent() }}
+    {{ bootstrapLib() }}
+  </head>
+  <body>
+    <div style="padding: 25px;">
+      
+      <div class="row">
+        <div class="col-md-8">
+          <!--- Name of app ---->
+          <h2>1:1 Matcher</h2>
+        </div>
+      </div>
+
+      <div class="row", id = "main-row">
+        <div class="col-md-12", id="main-body">
+          
+          <!-- Intro / Explanatory Text ---> 
+          <p>This tool matches SURJers for one-on-one conversations.</p>
+          
+          <p>It is currently running off responses to 
+          <a href='https://airtable.com/shrAvctlUGyUVSVCu'>this form</a>.</p>
+          
+          <!-- place buttons horizontally -->
+          <div class="row">
+              <div class="col-md-2">
+                {{run_matching}}
+              </div>
+              <div class="col-md-2">
+                {{download_pairs}}
+              </div>
+              <div class="col-md-2">
+                {{send_emails}}
+              </div>
+          </div>
+          
+          <div class="row">
+            {{need_scoobies}}
+            {{emails_sent}}
+            {{display_pairs}}
+          </div>
+        </div><!-- end of `main-body` -->
+          
+        </div> <!-- end `main-row` content -->
+      
+    </div> <!-- end container -->
+  </body>
+</html>
