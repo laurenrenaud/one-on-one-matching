@@ -1,3 +1,8 @@
+#' App expects the following environmental variables
+#' base_id - from airtable
+#' AIRTABLE_API_KEY - from airtable
+#' SMTP_PASSWORD -- of outgoing mail (gmail)
+
 library(dplyr)
 library(magrittr)
 library(airtabler)
@@ -10,7 +15,7 @@ library(httr)
 library(jsonlite)
 source("helper_functions.R")
 
-test_run <- FALSE
+test_run <- TRUE
 
 if (test_run) {
   source("setup.R")
@@ -28,10 +33,6 @@ shinyServer(function(input, output, session) {
     )
     print("connected to airtable")
     
-    # pull sign up list
-    # signup.list <- form_base$`1:1 Sign Up`$get() %>%
-    #   dplyr::select(-id, -createdTime) 
-    
     # pull up sign up list
     # only those who have not yet had an email sent
     signup.list <- form_base$`1:1 Sign Up`$select(filterByFormula = "{match_email_sent}=BLANK()") %>%
@@ -40,7 +41,7 @@ shinyServer(function(input, output, session) {
     print("pulled sign up list")
     
     # check if testing
-    if (test_run) {
+    if (test_run) { # only include test data
       signup.list %<>% dplyr::filter(grepl("fake", name, ignore.case = T))
     } else {
       # remove fake one
@@ -51,12 +52,14 @@ shinyServer(function(input, output, session) {
       # record to be easier to use
       dplyr::mutate(preferance = case_when(grepl("newbie", preferance) ~ "newbie",
                                            grepl("around", preferance) ~ "scoobie",
+                                           # if selected 'either' or missing
                                            TRUE ~ "either"),
                     engagement = case_when(grepl("newer", engagement) ~ "newbie",
                                            grepl("around", engagement) ~ "scoobie",
+                                           # if missing, mark newbie
                                            TRUE ~ "newbie"),
                     preferance = ordered(preferance, c("newbie", "scoobie", "either")),
-                    engagement = ordered(engagement, c("newbie", "scoobie", "either")))
+                    engagement = ordered(engagement, c("newbie", "scoobie")))
     
     # record for each convo requested
     # https://github.com/mrdwab/splitstackshape
@@ -68,7 +71,7 @@ shinyServer(function(input, output, session) {
     others <- convo.list %>%
       dplyr::filter(engagement != "newbie",
                     preferance != "scoobie") %>%
-      dplyr::select(name, preferance, engagement, num_convos) %>%
+      dplyr::select(name, record_id, preferance, engagement, num_convos) %>%
       # create a row number and sort on it to "shuffle" this list
       dplyr::group_by(name) %>%
       dplyr::mutate(convocount = row_number()) %>%
@@ -79,7 +82,7 @@ shinyServer(function(input, output, session) {
     newbie_scoobie_balance <- nrow(newbies) - nrow(others)
     print("check pair balance")
     
-    # chck there are sign ups
+    # check there are sign ups
     if (nrow(signup.list) == 0 | is.null(signup.list)) {
       output$need_scoobies <- renderText({
         paste0("<p><h3>No new sign up since the last round of matches</h3></p>")})
@@ -88,28 +91,28 @@ shinyServer(function(input, output, session) {
       # if perfect balance of newbies and scoobies, 
       # match scoobies with newbies
       
-      pairs <- tibble(partner1 = newbies$name,
-                      partner2 = others$name) %>%
+      pairs <- tibble(partner1 = newbies$record_id,
+                      partner2 = others$record_id) %>%
         dplyr::mutate(match_id = row_number())
       
     } else if (newbie_scoobie_balance < 0) {
       # if more scoobies than newbies
       
       # first match newbies
-      newbie.pairs <- tibble(partner1 = newbies$name,
-                             partner2 = others$name[1:nrow(newbies)]) 
+      newbie.pairs <- tibble(partner1 = newbies$record_id,
+                             partner2 = others$record_id[1:nrow(newbies)]) 
       
       # get remaining scoobies
       others.to.pair <- others[(nrow(newbies) + 1):nrow(others),] %>%
-        # arrange by name to avoid matching to self
-        dplyr::arrange(name) 
+        # arrange by record_id to avoid matching to self
+        dplyr::arrange(record_id) 
       
       other.pairs <- tibble(
-        # now that the list is sorted by name
+        # now that the list is sorted by record_id
         # put first half of list in partner1 column
-        partner1 = others.to.pair[1:(nrow(others.to.pair)/2),]$name,
+        partner1 = others.to.pair[1:(nrow(others.to.pair)/2),]$record_id,
         # second half of list in partner2 column
-        partner2 = others.to.pair[((nrow(others.to.pair)/2)+1):nrow(others.to.pair),]$name)
+        partner2 = others.to.pair[((nrow(others.to.pair)/2)+1):nrow(others.to.pair),]$record_id)
       
       # combine lists
       pairs <- dplyr::bind_rows(newbie.pairs, other.pairs) %>%
@@ -131,6 +134,15 @@ shinyServer(function(input, output, session) {
     # check that pairs exist
     if (nrow(pairs) > 0) {
       print("checked pairs before rendering table")
+      
+      pairs %<>%
+        # replace record_ids with names from sign up list
+        dplyr::left_join(select(signup.list, `Partner #1` = name, partner1 = record_id),
+                         by = "partner1")  %>%
+        dplyr::left_join(select(signup.list, `Partner #2` = name, partner2 = record_id),
+                         by = "partner2") %>%
+        dplyr::select(-partner1, -partner2)
+      
       output$display_pairs <- renderTable({
         pairs
       }, striped = TRUE)
@@ -161,7 +173,7 @@ shinyServer(function(input, output, session) {
   # inputs ------
   
   output$run_matching <- renderUI({
-    actionButton("run_matching", "Click to match!")
+    actionButton("run_matching", "Run Matches")
   })
   
   output$send_emails <- renderUI({
@@ -187,6 +199,11 @@ shinyServer(function(input, output, session) {
 #' ---- could do this by printing updated table after sending
 #' 
 #' SOME WAY TO PREVENT MULTIPE SENDS ---- update records after sending and filter before sending a batch
+#' 
+#' Add "re-shuffle" button (after match, before sending)
+#'  --- which will also involve setting a seed
+#'  --- and creating a random column for scoobies / partner #2
+#'  --- and sorting on that random column each time
 #' 
 #' Is there a way to remove an object -- remove the match table on button send email click and
 #' replace with updated list with a check box in SENT column
