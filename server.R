@@ -15,7 +15,7 @@ library(httr)
 library(jsonlite)
 source("helper_functions.R")
 
-test_run <- TRUE
+test_run <- FALSE
 
 if (test_run) {
   source("setup.R")
@@ -59,11 +59,15 @@ shinyServer(function(input, output, session) {
                                            # if missing, mark newbie
                                            TRUE ~ "newbie"),
                     preferance = ordered(preferance, c("newbie", "scoobie", "either")),
-                    engagement = ordered(engagement, c("newbie", "scoobie")))
+                    engagement = ordered(engagement, c("newbie", "scoobie")),
+                    num_convos = ifelse(is.na(num_convos), 1, as.numeric(num_convos)))
+    
+    # check number of conversations
+    print(paste0("sum convo count = ", sum(signup.list$num_convos)))
     
     # record for each convo requested
     # https://github.com/mrdwab/splitstackshape
-    convo.list <- expandRows(signup.list, "num_convos", drop = F)
+    convo.list <- expandRows(dataset = signup.list, count = "num_convos", drop = F)
     
     # Split scoobies and newbies
     newbies <- dplyr::filter(convo.list, engagement == "newbie")
@@ -80,12 +84,12 @@ shinyServer(function(input, output, session) {
     
     # Check newbie / scoobie balance 
     newbie_scoobie_balance <- nrow(newbies) - nrow(others)
-    print("check pair balance")
+    print(paste0("pair balance = ", newbie_scoobie_balance))
     
-    # check there are sign ups
+    # check there are any sign ups since last emails were sent
     if (nrow(signup.list) == 0 | is.null(signup.list)) {
       output$need_scoobies <- renderText({
-        paste0("<p><h3>No new sign up since the last round of matches</h3></p>")})
+        paste0("<p><h3>No new sign ups since the last round of matches</h3></p>")})
       
     } else if (newbie_scoobie_balance == 0) {
       # if perfect balance of newbies and scoobies, 
@@ -105,14 +109,18 @@ shinyServer(function(input, output, session) {
       # get remaining scoobies
       others.to.pair <- others[(nrow(newbies) + 1):nrow(others),] %>%
         # arrange by record_id to avoid matching to self
+        # and arrange by number of convos
+        # so we can drop someone with a high number
+        # if there are an uneven number of pairs
+        # num_convos, 
         dplyr::arrange(record_id) 
-      
+    
       other.pairs <- tibble(
         # now that the list is sorted by record_id
         # put first half of list in partner1 column
-        partner1 = others.to.pair[1:(nrow(others.to.pair)/2),]$record_id,
+        partner1 = others.to.pair[1:(floor(nrow(others.to.pair)/2)),]$record_id,
         # second half of list in partner2 column
-        partner2 = others.to.pair[((nrow(others.to.pair)/2)+1):nrow(others.to.pair),]$record_id)
+        partner2 = others.to.pair[((floor(nrow(others.to.pair)/2))+1):nrow(others.to.pair),]$record_id)
       
       # combine lists
       pairs <- dplyr::bind_rows(newbie.pairs, other.pairs) %>%
@@ -182,10 +190,10 @@ shinyServer(function(input, output, session) {
   
 })
 
-#### *TO DO* #######
-#' what to do if too many newbies, not enough scoobies
-#' could send messsage to get more scoobies!
+#' #### *TO DO* #######
 #' 
+#' Odd number of conversations   
+#'
 #' don't match with same partner more than once
 #' 
 #' don't forget about any scoobies who request to talk to a scoobie
