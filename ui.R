@@ -5,7 +5,7 @@ library(DT)
 # ui.R
 htmlTemplate("template.html",
              # text
-             need_scoobies = htmlOutput("need_scoobies"),
+             no_new_entries = htmlOutput("no_new_entries"),
              emails_sent = htmlOutput("emails_sent"),
              
              # display tables

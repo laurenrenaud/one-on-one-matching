@@ -36,7 +36,7 @@ shinyServer(function(input, output, session) {
     # pull up sign up list
     # only those who have not yet had an email sent
     signup.list <- form_base$`1:1 Sign Up`$select(filterByFormula = "{match_email_sent}=BLANK()") %>%
-      dplyr::select(-id, -createdTime, -`Created Date`)
+      dplyr::select(-id, -`Created Date`)
     
     print("pulled sign up list")
     
@@ -48,95 +48,18 @@ shinyServer(function(input, output, session) {
       signup.list %<>% dplyr::filter(!grepl("fake", name, ignore.case = T))
     }
     
-    signup.list %<>%
-      # record to be easier to use
-      dplyr::mutate(preferance = case_when(grepl("newbie", preferance) ~ "newbie",
-                                           grepl("around", preferance) ~ "scoobie",
-                                           # if selected 'either' or missing
-                                           TRUE ~ "either"),
-                    engagement = case_when(grepl("newer", engagement) ~ "newbie",
-                                           grepl("around", engagement) ~ "scoobie",
-                                           # if missing, mark newbie
-                                           TRUE ~ "newbie"),
-                    preferance = ordered(preferance, c("newbie", "scoobie", "either")),
-                    engagement = ordered(engagement, c("newbie", "scoobie")),
-                    num_convos = ifelse(is.na(num_convos), 1, as.numeric(num_convos)))
-    
-    # check number of conversations
-    print(paste0("sum convo count = ", sum(signup.list$num_convos)))
-    
-    # record for each convo requested
-    # https://github.com/mrdwab/splitstackshape
-    convo.list <- expandRows(dataset = signup.list, count = "num_convos", drop = F)
-    
-    # Split scoobies and newbies
-    newbies <- dplyr::filter(convo.list, engagement == "newbie")
-    
-    others <- convo.list %>%
-      dplyr::filter(engagement != "newbie",
-                    preferance != "scoobie") %>%
-      dplyr::select(name, record_id, preferance, engagement, num_convos) %>%
-      # create a row number and sort on it to "shuffle" this list
-      dplyr::group_by(name) %>%
-      dplyr::mutate(convocount = row_number()) %>%
-      dplyr::ungroup() %>%
-      dplyr::arrange(convocount, name)
-    
-    # Check newbie / scoobie balance 
-    newbie_scoobie_balance <- nrow(newbies) - nrow(others)
-    print(paste0("pair balance = ", newbie_scoobie_balance))
+    # add to a few 
+    signup.list$num_convos[signup.list$name=="Jen Myhre"] <- 4
     
     # check there are any sign ups since last emails were sent
     if (nrow(signup.list) == 0 | is.null(signup.list)) {
-      output$need_scoobies <- renderText({
+      output$no_new_entries <- renderText({
         paste0("<p><h3>No new sign ups since the last round of matches</h3></p>")})
-      
-    } else if (newbie_scoobie_balance == 0) {
-      # if perfect balance of newbies and scoobies, 
-      # match scoobies with newbies
-      
-      pairs <- tibble(partner1 = newbies$record_id,
-                      partner2 = others$record_id) %>%
-        dplyr::mutate(match_id = row_number())
-      
-    } else if (newbie_scoobie_balance < 0) {
-      # if more scoobies than newbies
-      
-      # first match newbies
-      newbie.pairs <- tibble(partner1 = newbies$record_id,
-                             partner2 = others$record_id[1:nrow(newbies)]) 
-      
-      # get remaining scoobies
-      others.to.pair <- others[(nrow(newbies) + 1):nrow(others),] %>%
-        # arrange by record_id to avoid matching to self
-        # and arrange by number of convos
-        # so we can drop someone with a high number
-        # if there are an uneven number of pairs
-        # num_convos, 
-        dplyr::arrange(record_id) 
-    
-      other.pairs <- tibble(
-        # now that the list is sorted by record_id
-        # put first half of list in partner1 column
-        partner1 = others.to.pair[1:(floor(nrow(others.to.pair)/2)),]$record_id,
-        # second half of list in partner2 column
-        partner2 = others.to.pair[((floor(nrow(others.to.pair)/2))+1):nrow(others.to.pair),]$record_id)
-      
-      # combine lists
-      pairs <- dplyr::bind_rows(newbie.pairs, other.pairs) %>%
-        unique()
-      
-      rm(other.pairs)
-      rm(others.to.pair)
-      rm(newbie.pairs)
       
     } else {
       
-      output$need_scoobies <- renderText({
-        paste0("<p><h4>We need ", newbie_scoobie_balance,
-               " more scoobie conversation partners.</h4></p>
-               <p>Add some folks on<a href='https://airtable.com/shrAvctlUGyUVSVCu'>this form</a>
-               and then re-run the matcher.</p>")})
+      pairs <- runAndCheckPairs(signup_list = signup.list)
+      
     }
     
     # check that pairs exist

@@ -1,5 +1,93 @@
-# send match email to both at same time
+createPairs <- function(signup_list) {
+  
+  # record for each convo requested
+  # https://github.com/mrdwab/splitstackshape
+  convo.list <- expandRows(signup_list, count = "num_convos", drop = F)
+  
+  pairing.list <- convo.list %>%
+    dplyr::group_by(record_id) %>%
+    dplyr::mutate(rand_set = runif(1)) %>% # used to randomize within newbie/scoobie groups
+    dplyr::arrange(preferance, engagement, rand_set)
+  
+  partner1.list <- pairing.list[1:(floor(nrow(pairing.list)/2)),
+                                c("name", "preferance", "engagement")] %>%
+    dplyr::rename("Partner #1" = "name", "Partner 1 Eng" = "engagement", "Partner 1 Pref" = "preferance") %>%
+    # randomize the order of participants, but keep particpants in a chunk together
+    
+  
+  # other half of the list, but inverted
+  partner2.list <- pairing.list[nrow(pairing.list):((floor(nrow(pairing.list)/2))+1), c(1, 4, 7)] %>%
+    dplyr::rename("Partner #2" = "name", "Partner 2 Eng" = "engagement", "Partner 2 Pref" = "preferance") %>%
+    # create a new randomized order
+    dplyr::ungroup() %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(rand_set = runif(1)) %>%
+    dplyr::arrange(rand_set) %>%
+    dplyr::select(-rand_set)
+  
+  # combine left and right sides of the pairs lists
+  pairs <- bind_cols(partner1.list, partner2.list)
+  
+  # check pair requests are met
+  pairs %<>%
+    dplyr::mutate(partner_1_req = `Partner 1 Pref` == `Partner 2 Eng` | `Partner 1 Pref`== "either",
+                  partner_2_req = `Partner 2 Pref` == `Partner 1 Eng` | `Partner 2 Pref`== "either",
+                  match_id = row_number())
+  
+  print(paste0("Partner 1 request misses: ", sum(!pairs$partner_1_req)))
+  print(paste0("Partner 2 request misses: ", sum(!pairs$partner_2_req)))
+  
+  return(pairs)
+}
+
+runAndCheckPairs <- function(signup_list = signup.list) {
+  
+  signup_list %<>%
+    # simplify from airtable verbose version
+    # and order for use in creating pairs
+    dplyr::mutate(preferance = case_when(grepl("newbie", preferance) ~ "newbie",
+                                         grepl("around", preferance) ~ "scoobie",
+                                         # if selected 'either' or missing
+                                         TRUE ~ "either"),
+                  engagement = case_when(grepl("newer", engagement) ~ "newbie",
+                                         grepl("around", engagement) ~ "scoobie",
+                                         # if missing, mark newbie
+                                         TRUE ~ "newbie"),
+                  preferance = ordered(preferance, c("scoobie", "either", "newbie")),
+                  engagement = ordered(engagement, c("newbie", "scoobie", "either")),
+                  num_convos = ifelse(is.na(num_convos), 1, as.numeric(num_convos)))
+  
+  # check number of conversations
+  print(paste0("sum convo count = ", sum(signup_list$num_convos)))
+  
+  # if odd number of conversations, drop one convo from someone who has large # requests
+  if (sum(signup_list$num_convos) %% 2 != 0) {
+    
+    signup_list %<>%
+      dplyr::arrange(desc(num_convos))
+    
+    signup_list$num_convos[1] <- signup_list$num_convos[1] - 1
+    
+  }
+  
+  # get initial pairs
+  pairs <- createPairs(signup_list = signup_list)
+  
+  # if there are duplicates, re-run
+  i <- 0
+  while (sum(duplicated(select(pairs, -match_id))) > 0 & i < 20) {
+    
+    pairs <- createPairs(signup_list = signup_list)
+    print(paste0("New duplicates: ", sum(duplicated(select(pairs, -match_id)))))
+    i + 1
+  }
+  
+  return(pairs)
+  
+}
+
 createMatchEmail <- function(partner1, partner2, signup_list) {
+  
   
   partner1_name <- partner1
   partner2_name <- partner2
