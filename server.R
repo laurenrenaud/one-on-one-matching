@@ -5,7 +5,8 @@
 
 library(dplyr)
 library(magrittr)
-library(airtabler)
+# library(airtabler)
+source("airtabler.R")
 library(lubridate)
 library(glue)
 library(blastula)
@@ -36,7 +37,7 @@ shinyServer(function(input, output, session) {
     # pull up sign up list
     # only those who have not yet had an email sent
     signup.list <- form_base$`1:1 Sign Up`$select(filterByFormula = "{match_email_sent}=BLANK()") %>%
-      dplyr::select(-id, -`Created Date`)
+      dplyr::select(-id, -createdTime)
     
     print("pulled sign up list")
     
@@ -48,8 +49,27 @@ shinyServer(function(input, output, session) {
       signup.list %<>% dplyr::filter(!grepl("fake", name, ignore.case = T))
     }
     
-    # add to a few 
-    signup.list$num_convos[signup.list$name=="Jen Myhre"] <- 4
+    # clean incoming list
+    signup.list %<>%
+      dplyr::group_by(name) %>%
+      # if someone has signed up more than once, keep most recent
+      #' *TODO**
+      #' If we remove someone need to update Airtable
+      #' so they aren't pulled in next batch
+      dplyr::filter(submit_date == max(submit_date)) %>%
+      # simplify from airtable verbose version
+      # and order for use in creating pairs
+      dplyr::mutate(preferance = case_when(grepl("newbie", preferance) ~ "newbie",
+                                           grepl("around", preferance) ~ "scoobie",
+                                           # if selected 'either' or missing
+                                           TRUE ~ "either"),
+                    engagement = case_when(grepl("newer", engagement) ~ "newbie",
+                                           grepl("around", engagement) ~ "scoobie",
+                                           # if missing, mark newbie
+                                           TRUE ~ "newbie"),
+                    preferance = ordered(preferance, c("scoobie", "either", "newbie")),
+                    engagement = ordered(engagement, c("newbie", "scoobie", "either")),
+                    num_convos = ifelse(is.na(num_convos), 1, as.numeric(num_convos)))
     
     # check there are any sign ups since last emails were sent
     if (nrow(signup.list) == 0 | is.null(signup.list)) {
@@ -65,14 +85,6 @@ shinyServer(function(input, output, session) {
     # check that pairs exist
     if (nrow(pairs) > 0) {
       print("checked pairs before rendering table")
-      
-      pairs %<>%
-        # replace record_ids with names from sign up list
-        dplyr::left_join(select(signup.list, `Partner #1` = name, partner1 = record_id),
-                         by = "partner1")  %>%
-        dplyr::left_join(select(signup.list, `Partner #2` = name, partner2 = record_id),
-                         by = "partner2") %>%
-        dplyr::select(-partner1, -partner2)
       
       output$display_pairs <- renderTable({
         pairs
@@ -115,26 +127,7 @@ shinyServer(function(input, output, session) {
 
 #' #### *TO DO* #######
 #' 
-#' Odd number of conversations   
-#'
-#' don't match with same partner more than once
-#' 
-#' don't forget about any scoobies who request to talk to a scoobie
-#' 
-#' Add step to review pairs on screen
-#' before sending emails
-#' 
 #' Add option to Shiny app to use different URL (and/or csv?)
-#' 
-#' PRINT EMAIL CONFIRMATION TO SCREEN 
-#' ---- could do this by printing updated table after sending
-#' 
-#' SOME WAY TO PREVENT MULTIPE SENDS ---- update records after sending and filter before sending a batch
-#' 
-#' Add "re-shuffle" button (after match, before sending)
-#'  --- which will also involve setting a seed
-#'  --- and creating a random column for scoobies / partner #2
-#'  --- and sorting on that random column each time
 #' 
 #' Is there a way to remove an object -- remove the match table on button send email click and
 #' replace with updated list with a check box in SENT column

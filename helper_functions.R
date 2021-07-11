@@ -11,12 +11,13 @@ createPairs <- function(signup_list) {
   
   partner1.list <- pairing.list[1:(floor(nrow(pairing.list)/2)),
                                 c("name", "preferance", "engagement")] %>%
-    dplyr::rename("Partner #1" = "name", "Partner 1 Eng" = "engagement", "Partner 1 Pref" = "preferance") %>%
-    # randomize the order of participants, but keep particpants in a chunk together
+    dplyr::rename("Partner #1" = "name", "Partner 1 Eng" = "engagement", "Partner 1 Pref" = "preferance")
+    # randomize the order of participants, but keep participants in a chunk together
     
   
   # other half of the list, but inverted
-  partner2.list <- pairing.list[nrow(pairing.list):((floor(nrow(pairing.list)/2))+1), c(1, 4, 7)] %>%
+  partner2.list <- pairing.list[nrow(pairing.list):((floor(nrow(pairing.list)/2))+1), 
+                                c("name", "preferance", "engagement")] %>%
     dplyr::rename("Partner #2" = "name", "Partner 2 Eng" = "engagement", "Partner 2 Pref" = "preferance") %>%
     # create a new randomized order
     dplyr::ungroup() %>%
@@ -31,8 +32,7 @@ createPairs <- function(signup_list) {
   # check pair requests are met
   pairs %<>%
     dplyr::mutate(partner_1_req = `Partner 1 Pref` == `Partner 2 Eng` | `Partner 1 Pref`== "either",
-                  partner_2_req = `Partner 2 Pref` == `Partner 1 Eng` | `Partner 2 Pref`== "either",
-                  match_id = row_number())
+                  partner_2_req = `Partner 2 Pref` == `Partner 1 Eng` | `Partner 2 Pref`== "either")
   
   print(paste0("Partner 1 request misses: ", sum(!pairs$partner_1_req)))
   print(paste0("Partner 2 request misses: ", sum(!pairs$partner_2_req)))
@@ -41,21 +41,6 @@ createPairs <- function(signup_list) {
 }
 
 runAndCheckPairs <- function(signup_list = signup.list) {
-  
-  signup_list %<>%
-    # simplify from airtable verbose version
-    # and order for use in creating pairs
-    dplyr::mutate(preferance = case_when(grepl("newbie", preferance) ~ "newbie",
-                                         grepl("around", preferance) ~ "scoobie",
-                                         # if selected 'either' or missing
-                                         TRUE ~ "either"),
-                  engagement = case_when(grepl("newer", engagement) ~ "newbie",
-                                         grepl("around", engagement) ~ "scoobie",
-                                         # if missing, mark newbie
-                                         TRUE ~ "newbie"),
-                  preferance = ordered(preferance, c("scoobie", "either", "newbie")),
-                  engagement = ordered(engagement, c("newbie", "scoobie", "either")),
-                  num_convos = ifelse(is.na(num_convos), 1, as.numeric(num_convos)))
   
   # check number of conversations
   print(paste0("sum convo count = ", sum(signup_list$num_convos)))
@@ -75,11 +60,17 @@ runAndCheckPairs <- function(signup_list = signup.list) {
   
   # if there are duplicates, re-run
   i <- 0
-  while (sum(duplicated(select(pairs, -match_id))) > 0 & i < 20) {
+  while (sum(duplicated(pairs)) > 0 & i < 20) {
     
     pairs <- createPairs(signup_list = signup_list)
     print(paste0("New duplicates: ", sum(duplicated(select(pairs, -match_id)))))
     i + 1
+    
+    # check interests
+    # pairs %>%
+    #   dplyr::left_join(select(signup_list, name, interests), by = c("Partner #1" = "name")) %>%
+    #   dplyr::left_join(select(signup_list, name, interests), by = c("Partner #2" = "name")) %>%
+    #   dplyr::select(`Partner #1`, `Partner #2`, interests.x, interests.y) %>% View()
   }
   
   return(pairs)
@@ -135,8 +126,8 @@ sendMatchEmails <- function(pairs, signup_list = signup.list) {
   # send email for each match
   for (match in pairs$match_id) {
     
-    partner1 = pairs$partner1[pairs$match_id==match]
-    partner2 = pairs$partner2[pairs$match_id==match]
+    partner1 = pairs$`Partner #1`[pairs$match_id==match]
+    partner2 = pairs$`Partner #2`[pairs$match_id==match]
     
     email <- createMatchEmail(partner1, partner2, signup_list)
     print(paste("match email #", match))
@@ -166,8 +157,8 @@ sendMatchEmails <- function(pairs, signup_list = signup.list) {
   }
 }
 
-updateAirtableSent <- function(partner1, parter1_record, 
-                               partner2, parter2_record) {
+updateAirtableSent <- function(partner1, partner1_record, 
+                               partner2, partner2_record) {
   
   # set up body of update -- just match date
   record_data <- air_prepare_record(list(match_email_sent = as.character(Sys.Date())))
@@ -175,9 +166,9 @@ updateAirtableSent <- function(partner1, parter1_record,
   
   # update record for first partner  
   res <- httr::PATCH(
-    url = paste0(Sys.getenv("base_api_url"), parter1_record),
+    url = paste0(Sys.getenv("base_api_url"), partner1_record),
     httr::add_headers(
-      Authorization = paste("Bearer", air_api_key()),
+      Authorization = paste("Bearer", Sys.getenv("AIRTABLE_API_KEY")),
       `Content-type` = "application/json"),
     body = json_record_data
   )
@@ -189,7 +180,7 @@ updateAirtableSent <- function(partner1, parter1_record,
   
   # update record for second partner  
   res <- httr::PATCH(
-    url = paste0(Sys.getenv("base_api_url"), parter2_record),
+    url = paste0(Sys.getenv("base_api_url"), partner2_record),
     httr::add_headers(
       Authorization = paste("Bearer", air_api_key()),
       `Content-type` = "application/json"),
