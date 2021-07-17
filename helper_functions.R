@@ -63,7 +63,7 @@ runAndCheckPairs <- function(signup_list = signup.list) {
   while (sum(duplicated(pairs)) > 0 & i < 20) {
     
     pairs <- createPairs(signup_list = signup_list)
-    print(paste0("New duplicates: ", sum(duplicated(select(pairs, -match_id)))))
+    print(paste0("New duplicates: ", sum(duplicated(pairs))))
     i + 1
     
     # check interests
@@ -135,13 +135,12 @@ sendMatchEmails <- function(pairs, signup_list = signup.list) {
     # send email
     email %>%
       smtp_send(
-        # to = "lauren.renaud+test@gmail.com",
         to = c(signup_list$email[signup_list$name==partner1],
                signup_list$email[signup_list$name==partner2]),
-        from = c("Lauren at SURJ" = "lauren.renaud@gmail.com"),
-        subject = "Match for SURJ July of 1:1s",
+        from = c("Lauren at SURJ" = Sys.getenv("EMAIL_USER")),
+        subject = "Match for SURJ 1:1s",
         credentials = creds_envvar(
-          user = "lauren.renaud@gmail.com",
+          user = Sys.getenv("EMAIL_USER"),
           pass_envvar = "SMTP_PASSWORD",
           provider = "gmail",
           host = "smtp.gmail.com",
@@ -151,45 +150,15 @@ sendMatchEmails <- function(pairs, signup_list = signup.list) {
     
     print(paste0("Email sent to ", partner1, " and ", partner2))
     
-    updateAirtableSent(partner1, signup_list$record_id[signup_list$name==partner1],
-                       partner2, signup_list$record_id[signup_list$name==partner2])
+    # update record in airtable 
+    partner1_record <- signup_list$record_id[signup_list$name==partner1]
+    partner2_record <- signup_list$record_id[signup_list$name==partner2]
+    
+    update_records(records = data.frame(record_id = c(partner1_record, partner2_record),
+                                        match_email_sent = as.character(Sys.Date())),
+                   ids = record_id)
+    
+    print(paste0("Airtable updated for ", partner1, " and ", partner2))
     
   }
-}
-
-updateAirtableSent <- function(partner1, partner1_record, 
-                               partner2, partner2_record) {
-  
-  # set up body of update -- just match date
-  record_data <- air_prepare_record(list(match_email_sent = as.character(Sys.Date())))
-  json_record_data <- jsonlite::toJSON(list(fields = record_data))
-  
-  # update record for first partner  
-  res <- httr::PATCH(
-    url = paste0(Sys.getenv("base_api_url"), partner1_record),
-    httr::add_headers(
-      Authorization = paste("Bearer", Sys.getenv("AIRTABLE_API_KEY")),
-      `Content-type` = "application/json"),
-    body = json_record_data
-  )
-  
-  air_validate(res)  # throws exception (stop) if error
-  
-  update_response <- air_parse(res)
-  print(paste0("Email sent to ", partner1, " (with ", partner2, ")"))
-  
-  # update record for second partner  
-  res <- httr::PATCH(
-    url = paste0(Sys.getenv("base_api_url"), partner2_record),
-    httr::add_headers(
-      Authorization = paste("Bearer", air_api_key()),
-      `Content-type` = "application/json"),
-    body = json_record_data
-  )
-  
-  air_validate(res)  # throws exception (stop) if error
-  
-  update_response <- air_parse(res)
-  print(paste0("Email sent to ", partner2, " (with ", partner1, ")"))
-  
 }

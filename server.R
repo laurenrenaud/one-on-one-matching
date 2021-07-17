@@ -1,12 +1,12 @@
 #' App expects the following environmental variables
 #' base_id - from airtable
+#' table_name - from airtable
 #' AIRTABLE_API_KEY - from airtable
 #' SMTP_PASSWORD -- of outgoing mail (gmail)
 
 library(dplyr)
 library(magrittr)
-# library(airtabler)
-source("airtabler.R")
+library(rtable)
 library(lubridate)
 library(glue)
 library(blastula)
@@ -16,7 +16,7 @@ library(httr)
 library(jsonlite)
 source("helper_functions.R")
 
-test_run <- FALSE
+test_run <- TRUE
 
 if (test_run) {
   source("setup.R")
@@ -27,17 +27,19 @@ shinyServer(function(input, output, session) {
   # run matching ----
   observeEvent(input$run_matching, {
     
-    # connect to airtable
-    form_base <- airtable(
-      base = Sys.getenv("base_id"), 
-      tables = c("1:1 Sign Up")
-    )
-    print("connected to airtable")
+    # set up creds
+    setup(api_key = Sys.getenv("AIRTABLE_API_KEY"), 
+          base = Sys.getenv("base_id"),
+          table = Sys.getenv("table_name"))
+    
+    # confirm
+    get_setup()
     
     # pull up sign up list
-    # only those who have not yet had an email sent
-    signup.list <- form_base$`1:1 Sign Up`$select(filterByFormula = "{match_email_sent}=BLANK()") %>%
-      dplyr::select(-id, -createdTime)
+    signup.list <- records_to_tibble(list_records(#view = "Responses",
+                                                  # only those who have not yet had an email sent
+                                                  filter = "{match_email_sent}=BLANK()")) %>%
+      dplyr::select(-record_id_displayed, -record_created_time)
     
     print("pulled sign up list")
     
