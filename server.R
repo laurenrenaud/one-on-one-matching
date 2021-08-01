@@ -3,9 +3,11 @@
 #' table_name - from airtable
 #' AIRTABLE_API_KEY - from airtable
 #' SMTP_PASSWORD -- of outgoing mail (gmail)
+#' EMAIL_USER -- email address of outgoing mail
 
 library(dplyr)
 library(magrittr)
+# https://rtable.john-coene.com/articles/classic.html
 library(rtable)
 library(lubridate)
 library(glue)
@@ -13,7 +15,6 @@ library(blastula)
 library(splitstackshape)
 library(shiny)
 library(httr)
-library(jsonlite)
 source("helper_functions.R")
 
 test_run <- TRUE
@@ -38,8 +39,7 @@ shinyServer(function(input, output, session) {
     # pull up sign up list
     signup.list <- records_to_tibble(list_records(#view = "Responses",
                                                   # only those who have not yet had an email sent
-                                                  filter = "{match_email_sent}=BLANK()")) %>%
-      dplyr::select(-record_id_displayed, -record_created_time)
+                                                  filter = "{match_email_sent}=BLANK()")) 
     
     print("pulled sign up list")
     
